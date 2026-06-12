@@ -1359,3 +1359,123 @@ async def tween_cel_scale_eased(
             f"in {filename}"
         )
     return f"Failed to tween cel scale with easing: {output}"
+
+
+@mcp.tool()
+async def delete_frame(filename: str, frame_index: int) -> str:
+    """Delete a frame by index.
+
+    Args:
+        filename: Aseprite file to modify
+        frame_index: Frame index starting at 1
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then print("ERROR:No active sprite") return end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
+    if #spr.frames <= 1 then print("ERROR:Cannot delete the only frame") return end
+
+    app.transaction(function()
+        spr:deleteFrame(spr.frames[idx])
+    end)
+
+    spr:saveAs(spr.filename)
+    print("OK")
+    """
+
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
+    if success:
+        return f"Frame {frame_index} deleted from {filename}"
+    return f"Failed to delete frame: {output}"
+
+
+@mcp.tool()
+async def delete_tag(filename: str, name: str) -> str:
+    """Delete an animation tag by name.
+
+    Args:
+        filename: Aseprite file to modify
+        name: Tag name to delete
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    safe_name = lua_escape(name)
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then print("ERROR:No active sprite") return end
+
+    local target = nil
+    for _, tag in ipairs(spr.tags) do
+        if tag.name == "{safe_name}" then target = tag break end
+    end
+    if not target then print("ERROR:Tag not found") return end
+
+    app.transaction(function()
+        spr:deleteTag(target)
+    end)
+
+    spr:saveAs(spr.filename)
+    print("OK")
+    """
+
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
+    if success:
+        return f"Tag '{name}' deleted from {filename}"
+    return f"Failed to delete tag: {output}"
+
+
+@mcp.tool()
+async def set_cel_opacity(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    opacity: int,
+) -> str:
+    """Set the opacity of a single cel (0-255).
+
+    Args:
+        filename: Aseprite file to modify
+        layer_name: Layer containing the cel
+        frame_index: Frame index starting at 1
+        opacity: Opacity 0 (transparent) to 255 (opaque)
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+    if not (0 <= opacity <= 255):
+        return "Opacity must be between 0 and 255"
+
+    safe_layer = lua_escape(layer_name)
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then print("ERROR:No active sprite") return end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer}" then target = layer break end
+    end
+    if not target then print("ERROR:Layer not found") return end
+
+    local cel = target:cel(spr.frames[idx])
+    if not cel then print("ERROR:No cel at that layer/frame") return end
+
+    app.transaction(function()
+        cel.opacity = {opacity}
+    end)
+
+    spr:saveAs(spr.filename)
+    print("OK")
+    """
+
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
+    if success:
+        return f"Cel opacity set to {opacity} on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to set cel opacity: {output}"

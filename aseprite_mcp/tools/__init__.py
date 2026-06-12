@@ -9,3 +9,10 @@ from . import guide
 from . import quality
 from . import pixel_read
 from . import transform
+from . import layers
+from . import selection
+from . import fx
+from . import analysis
+from . import slices
+from . import tilemap
+from . import script

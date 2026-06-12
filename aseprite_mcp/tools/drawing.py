@@ -1008,3 +1008,86 @@ async def apply_gradient_rect(
     if success:
         return f"Gradient applied on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to apply gradient: {output}"
+
+
+@mcp.tool()
+async def draw_ellipse_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    center_x: int,
+    center_y: int,
+    radius_x: int,
+    radius_y: int,
+    color: str = "#000000",
+    fill: bool = False,
+    create_if_missing: bool = True
+) -> str:
+    """Draw an ellipse on a specific layer/frame.
+
+    Args:
+        filename: Aseprite file to modify
+        layer_name: Layer to draw on
+        frame_index: Frame index starting at 1
+        center_x: Ellipse center x
+        center_y: Ellipse center y
+        radius_x: Horizontal radius in pixels
+        radius_y: Vertical radius in pixels
+        color: Hex color code (default "#000000")
+        fill: Fill the ellipse instead of outlining it
+        create_if_missing: Create the cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+    if radius_x <= 0 or radius_y <= 0:
+        return "radius_x and radius_y must be > 0"
+
+    rgb = _parse_hex_color(color)
+    if rgb is None:
+        return f"Invalid color value: {color}"
+    r, g, b = rgb
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then return "No active sprite" end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer_name}" then target = layer break end
+    end
+    if not target then return "Layer not found" end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local color = Color({r}, {g}, {b}, 255)
+        local tool = {'"filled_ellipse"' if fill else '"ellipse"'}
+        app.useTool({{
+            tool=tool,
+            color=color,
+            points={{
+                Point({center_x - radius_x}, {center_y - radius_y}),
+                Point({center_x + radius_x}, {center_y + radius_y})
+            }}
+        }})
+    end)
+
+    spr:saveAs(spr.filename)
+    return "Ellipse drawn"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    if success:
+        return f"Ellipse drawn on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to draw ellipse: {output}"
