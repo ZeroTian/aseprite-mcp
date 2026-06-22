@@ -36,6 +36,16 @@ def reject_traversal(path: str) -> str | None:
     return None
 
 
+def _decode_output(data):
+    # Decode subprocess bytes: try UTF-8, fall back to GBK (Chinese Windows console)
+    if not data:
+        return ''
+    try:
+        return data.decode('utf-8')
+    except UnicodeDecodeError:
+        return data.decode('gbk', errors='replace')
+
+
 class AsepriteCommand:
     """Helper class for running Aseprite commands."""
     
@@ -49,12 +59,19 @@ class AsepriteCommand:
         Returns:
             tuple: (success, output) where success is a boolean and output is the command output
         """
+        timeout = int(os.getenv('ASEPRITE_TIMEOUT', '120'))
         try:
             cmd = [os.getenv('ASEPRITE_PATH', 'aseprite')] + args
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            return True, result.stdout
-        except subprocess.CalledProcessError as e:
-            return False, e.stderr
+            result = subprocess.run(cmd, capture_output=True, timeout=timeout)
+            out = _decode_output(result.stdout)
+            err = _decode_output(result.stderr)
+            if result.returncode != 0:
+                return False, err or out
+            return True, out
+        except subprocess.TimeoutExpired:
+            return False, "ERROR: aseprite timed out after %ds (killed)" % timeout
+        except Exception as e:
+            return False, "ERROR: %s" % e
     
     @staticmethod
     def execute_lua_script(script_content, filename=None):
